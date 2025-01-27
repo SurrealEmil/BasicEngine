@@ -38,6 +38,11 @@ const paddleWidth = 20; // Narrow width for vertical paddles
 const paddleHeight = 150; // Taller height for vertical paddles
 const ballRadius = 10;
 
+// Ball speed control constant
+const initialBallSpeed = 10; // Initial speed of the ball
+let ballSpeed = initialBallSpeed; // Current speed of the ball
+const speedIncrement = 0.5; // How much to increase the speed after every paddle hit
+
 // Left paddle (Player 1)
 const leftPaddle = Bodies.rectangle(150, worldHeight / 2, paddleWidth, paddleHeight, { isStatic: true });
 // Right paddle (Player 2)
@@ -53,30 +58,36 @@ const ball = Bodies.circle(worldWidth / 2, worldHeight / 2, ballRadius, {
 Composite.add(engine.world, [leftPaddle, rightPaddle, ball]);
 
 // Create the floor and ceiling (walls)
-const ground = Bodies.rectangle(worldWidth / 2, worldHeight +30, worldWidth, 60, { isStatic: true });
+const ground = Bodies.rectangle(worldWidth / 2, worldHeight + 30, worldWidth, 60, { isStatic: true });
 const ceiling = Bodies.rectangle(worldWidth / 2, -30, worldWidth, 60, { isStatic: true });
 Composite.add(engine.world, [ground, ceiling]);
 
-// Give the ball an initial velocity with random direction
-Matter.Body.setVelocity(ball, { x: 5, y: 5 });
+// Give the ball an initial velocity with the initialBallSpeed constant
+Matter.Body.setVelocity(ball, { x: initialBallSpeed, y: initialBallSpeed });
 
 // Function to reset ball position and velocity
 function resetBall() {
+    // Reset the ball speed to the initial value
+    ballSpeed = initialBallSpeed;
+
     // Reset ball position to the center
     Body.setPosition(ball, { x: worldWidth / 2, y: worldHeight / 2 });
-    // Reset ball velocity to a random direction
-    const randomX = Math.random() < 0.5 ? 5 : -5; // Random direction for X
-    const randomY = Math.random() < 0.5 ? 5 : -5; // Random direction for Y
+    
+    // Reset ball velocity to a random direction with the initial ballSpeed
+    const randomX = Math.random() < 0.5 ? ballSpeed : -ballSpeed; // Random direction for X
+    const randomY = Math.random() < 0.5 ? ballSpeed : -ballSpeed; // Random direction for Y
     Matter.Body.setVelocity(ball, { x: randomX, y: randomY });
 }
 
-// Function to make the ball bounce with more unpredictability
-function bounceBall() {
-    // Randomize the bounce direction slightly after hitting a wall
-    if (ball.position.y <= 10 || ball.position.y >= worldHeight - 10) {
-        const newVelX = ball.velocity.x * (1 + Math.random() * 0.2 - 0.1); // Add some randomness
-        const newVelY = ball.velocity.y * (1 + Math.random() * 0.2 - 0.1);
-        Matter.Body.setVelocity(ball, { x: newVelX, y: newVelY });
+// Function to keep the ball speed consistent
+function maintainBallSpeed() {
+    const speedMagnitude = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2); // Current speed magnitude
+    if (speedMagnitude !== ballSpeed) {
+        const scale = ballSpeed / speedMagnitude; // Scale factor to maintain speed
+        Matter.Body.setVelocity(ball, {
+            x: ball.velocity.x * scale,
+            y: ball.velocity.y * scale
+        });
     }
 }
 
@@ -106,6 +117,34 @@ function updatePaddleMovement() {
         Body.setPosition(rightPaddle, { x: rightPaddle.position.x, y: newY });
     }
 }
+
+// Add collision event listener
+Matter.Events.on(engine, 'collisionStart', (event) => {
+    const pairs = event.pairs;
+
+    pairs.forEach((pair) => {
+        const { bodyA, bodyB } = pair;
+        if ((bodyA === ball && (bodyB === leftPaddle || bodyB === rightPaddle)) ||
+            (bodyB === ball && (bodyA === leftPaddle || bodyA === rightPaddle))) {
+            
+            const paddle = bodyA === ball ? bodyB : bodyA; // Determine which paddle was hit
+
+            // Calculate the collision point relative to the paddle's center
+            const relativeY = ball.position.y - paddle.position.y;
+            const normalizedRelativeY = relativeY / (paddleHeight / 2); // Normalize (-1 to 1)
+
+            // Adjust ball velocity based on the collision point
+            const newVelocityX = ball.velocity.x > 0 ? ballSpeed : -ballSpeed; // Maintain horizontal speed
+            const newVelocityY = normalizedRelativeY * ballSpeed; // Adjust vertical speed based on collision point
+
+            // Increase the ball speed
+            ballSpeed += speedIncrement;
+
+            // Apply the new velocity
+            Matter.Body.setVelocity(ball, { x: newVelocityX, y: newVelocityY });
+        }
+    });
+});
 
 // Event listeners for paddle movement
 document.addEventListener('keydown', (event) => {
@@ -142,6 +181,6 @@ Runner.run(runner, engine);
 // Continuously check if the ball goes off-screen and reset if necessary
 setInterval(() => {
     checkBallOutOfBounds();
-    bounceBall(); // Make ball bounce more unpredictably
+    maintainBallSpeed(); // Keep ball speed consistent
     updatePaddleMovement(); // Smoothly update paddle positions
 }, 16); // 60 FPS (approximately 16ms per frame)
